@@ -31,6 +31,7 @@ typedef struct{
 void *thread_worker(void *arg);
 void thread_pool_add_task(thread_pool_t *pool, void (*function)(void *), void *arg);
 
+//initialize thread pool by creating 20 threads calling the thread worker function
 void thread_pool_init(thread_pool_t *pool, int max_threads){
 	pool->max_threads = max_threads;
 	pool->num_threads = 0;
@@ -44,26 +45,32 @@ void thread_pool_init(thread_pool_t *pool, int max_threads){
 		pthread_create(&pool->threads[i], NULL, thread_worker, (void *) pool);
 	}
 }
-
+//destroy thread pool and free memory
 void thread_pool_destroy(thread_pool_t *pool){
 	pthread_mutex_destroy(&pool->queue_mutex);
 	pthread_cond_destroy(&pool->queue_cond);
 	free(pool->task_queue);
 	free(pool->threads);
 }
+//add task to thread pool
 void thread_pool_add_task(thread_pool_t *pool, void (*function)(void *), void *arg){
 	pthread_mutex_lock(&pool->queue_mutex);
 	if(pool->queue_size >= pool->queue_capacity){
 		pool->queue_capacity = (pool->queue_capacity == 0) ? 1 : pool->queue_capacity * 2;
 		pool->task_queue = realloc(pool->task_queue, pool->queue_capacity * sizeof(thread_task_t));
 	}
+	//add task to queue
 	pool->task_queue[pool->queue_size].function = function;
 	pool->task_queue[pool->queue_size].arg = arg;
 	pool->queue_size++;
+
+	// wake up any sleeping threads waiting for a task to be added
 	pthread_cond_signal(&pool->queue_cond);
 	pthread_mutex_unlock(&pool->queue_mutex);
 }
 
+//thread worker called by each thread
+//waits for tasks to be added
 void *thread_worker(void *arg){
 	thread_pool_t *pool = (thread_pool_t *) arg;
 	while(1){
@@ -139,7 +146,6 @@ void compress_file_thread(void *arg){
 	free(targ->file_path);
 	free(targ);
 	
-	//pthread_exit(NULL);
 }
 
 

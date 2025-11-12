@@ -251,41 +251,6 @@ int compress_directory(char *directory_name) {
 		thread_pool_add_task(pool, compress_file_thread, arg);
 	}
 	
-	//while(file_idx < nfiles) {
-	//	// Determine how many threads to launch in this batch
-	//	int batch_size = (nfiles - file_idx < MAX_THREADS) ? (nfiles - file_idx) : MAX_THREADS;
-	//	
-	//	// Launch threads for this batch
-	//	for(int i = 0; i < batch_size; i++) {
-	//		int current_file = file_idx + i;
-	//		
-	//		// Build full path
-	//		int len = strlen(directory_name) + strlen(files[current_file]) + 2;
-	//		char *full_path = malloc(len * sizeof(char));
-	//		assert(full_path != NULL);
-	//		strcpy(full_path, directory_name);
-	//		strcat(full_path, "/");
-	//		strcat(full_path, files[current_file]);
-	//		
-	//		// Create thread argument
-	//		thread_arg_t *arg = malloc(sizeof(thread_arg_t));
-	//		assert(arg != NULL);
-	//		arg->file_path = full_path;
-	//		arg->index = current_file;
-	//		arg->thread_data = &thread_data[current_file];
-	//		
-	//		// Launch thread
-	//		pthread_create(&threads[i], NULL, compress_file_thread, arg);
-	//	}
-	//	
-	//	// Wait for all threads in this batch to complete
-	//	for(int i = 0; i < batch_size; i++) {
-	//		pthread_join(threads[i], NULL);
-	//	}
-	//	
-	//	file_idx += batch_size;
-	//}
-
 	// Wait for all threads to complete
 	pthread_mutex_lock(&completed_mutex);
 	while(completed_threads < nfiles){

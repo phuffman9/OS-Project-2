@@ -77,7 +77,7 @@ void thread_pool_add_task(thread_pool_t *pool, void (*function)(void *), void *a
 	pool->task_queue[pool->queue_size].function = function;
 	pool->task_queue[pool->queue_size].arg = arg;
 	pool->queue_size++;
-
+	//
 	// wake up any sleeping threads waiting for a task to be added
 	pthread_cond_signal(&pool->queue_cond);
 	pthread_mutex_unlock(&pool->queue_mutex);
@@ -137,7 +137,7 @@ void compress_file_thread(void *arg){
 	assert(targ->thread_data->output_buffer != NULL);
 
 	// open input file
-	FILE *f_in = fopen(targ->file_path, "r");
+	FILE *f_in = fopen(targ->file_path, "rb");
 	assert(f_in != NULL);
 
 	// read input file
@@ -146,6 +146,7 @@ void compress_file_thread(void *arg){
 
 	// compress data as in original func
 	z_stream strm;
+	memset(&strm, 0, sizeof(z_stream));  // Initialize to zero
 	int ret = deflateInit(&strm, 9);
 	assert(ret == Z_OK);
 	strm.avail_in = targ->thread_data->nbytes;
@@ -198,7 +199,7 @@ int compress_directory(char *directory_name) {
 		}
 
 		int len = strlen(dir->d_name);
-		if(dir->d_name[len-4] == '.' && dir->d_name[len-3] == 't' && dir->d_name[len-2] == 'x' && dir->d_name[len-1] == 't') {
+		if(len >= 4 && dir->d_name[len-4] == '.' && dir->d_name[len-3] == 't' && dir->d_name[len-2] == 'x' && dir->d_name[len-1] == 't') {
 			files[nfiles] = strdup(dir->d_name);
 			assert(files[nfiles] != NULL);
 
@@ -300,7 +301,7 @@ int compress_directory(char *directory_name) {
 
 	// Write all results to output file in lexicographical order
 	int total_in = 0, total_out = 0;
-	FILE *f_out = fopen("text.tzip", "w");
+	FILE *f_out = fopen("text.tzip", "wb");
 	assert(f_out != NULL);
 	for(int i = 0; i < nfiles; i++) {
 		// Write compressed data

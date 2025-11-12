@@ -1,3 +1,6 @@
+// group 
+// Peyton Huffman, Tiago Silvestre
+// A multi-threaded implemetation of the compression tool using pthreads library
 #include <dirent.h> 
 #include <stdio.h> 
 #include <assert.h>
@@ -26,6 +29,7 @@ typedef struct{
 	int queue_capacity;
 	pthread_mutex_t queue_mutex;
 	pthread_cond_t queue_cond;
+	int shutdown;
 } thread_pool_t;
 
 void *thread_worker(void *arg);
@@ -38,6 +42,7 @@ void thread_pool_init(thread_pool_t *pool, int max_threads){
 	pool->task_queue = NULL;
 	pool->queue_size = 0;
 	pool->queue_capacity = 0;
+	pool->shutdown = 0;
 	pthread_mutex_init(&pool->queue_mutex, NULL);
 	pthread_cond_init(&pool->queue_cond, NULL);
 	pool->threads = malloc(max_threads * sizeof(pthread_t));
@@ -47,6 +52,15 @@ void thread_pool_init(thread_pool_t *pool, int max_threads){
 }
 //destroy thread pool and free memory
 void thread_pool_destroy(thread_pool_t *pool){
+	pthread_mutex_lock(&pool->queue_mutex);
+    pool->shutdown = 1;
+    pthread_cond_broadcast(&pool->queue_cond);
+    pthread_mutex_unlock(&pool->queue_mutex);
+
+	
+	for(int i = 0; i < pool->max_threads; i++){
+		pthread_join(pool->threads[i], NULL);
+	}
 	pthread_mutex_destroy(&pool->queue_mutex);
 	pthread_cond_destroy(&pool->queue_cond);
 	free(pool->task_queue);
@@ -76,8 +90,12 @@ void *thread_worker(void *arg){
 	while(1){
 		pthread_mutex_lock(&pool->queue_mutex);
 		// wait for task
-		while(pool->queue_size == 0){
+		while(pool->queue_size == 0 && !pool->shutdown){
 			pthread_cond_wait(&pool->queue_cond, &pool->queue_mutex);
+		}
+		if(pool->shutdown && pool->queue_size == 0){
+			pthread_mutex_unlock(&pool->queue_mutex);
+			pthread_exit(NULL);
 		}
 		thread_task_t task = pool->task_queue[0];
 		//shift task queue
@@ -104,10 +122,12 @@ typedef struct{
 	char *file_path;
 	int index;
 	thread_data_t *thread_data;
+	int *completed_threads;
+	pthread_mutex_t *completed_mutex;
+	pthread_cond_t *completed_cond;
 } thread_arg_t;
 
-int completed_threads = 0;
-pthread_mutex_t completed_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void compress_file_thread(void *arg){
 	thread_arg_t *targ = (thread_arg_t *) arg;
 	
@@ -138,9 +158,10 @@ void compress_file_thread(void *arg){
 
 	// store compressed size
 	targ->thread_data->nbytes_zipped = BUFFER_SIZE - strm.avail_out;
-	pthread_mutex_lock(&completed_mutex);
-	completed_threads++;
-	pthread_mutex_unlock(&completed_mutex);
+	pthread_mutex_lock(targ->completed_mutex);
+	(*targ->completed_threads)++;
+	pthread_cond_signal(targ->completed_cond);
+	pthread_mutex_unlock(targ->completed_mutex);
 
 	deflateEnd(&strm);
 	free(targ->file_path);
@@ -188,6 +209,9 @@ int compress_directory(char *directory_name) {
 	qsort(files, nfiles, sizeof(char *), cmp);
 
 	// Allocate thread data and results arrays
+	if(nfiles == 0){
+		return 0;
+	}
 	thread_data_t *thread_data = calloc(nfiles, sizeof(thread_data_t));
 	thread_pool_t *pool = malloc(sizeof(thread_pool_t));
 	thread_pool_init(pool, MAX_THREADS);
@@ -199,7 +223,9 @@ int compress_directory(char *directory_name) {
 		thread_data[i].input_buffer = malloc(BUFFER_SIZE);
 		assert(thread_data[i].input_buffer != NULL);
 	}
-	
+	int completed_threads = 0;
+	pthread_mutex_t completed_mutex = PTHREAD_MUTEX_INITIALIZER;
+	pthread_cond_t completed_cond = PTHREAD_COND_INITIALIZER;
 	// create threads for thread pool
 	for(int i =0; i < nfiles; i++){
 		// Build full path
@@ -216,6 +242,9 @@ int compress_directory(char *directory_name) {
 		arg->file_path = full_path;
 		arg->index = i;
 		arg->thread_data = &thread_data[i];
+		arg->completed_mutex = &completed_mutex;
+		arg->completed_threads = &completed_threads;
+		arg->completed_cond = &completed_cond;
 
 		//add task to thread pool
 		thread_pool_add_task(pool, compress_file_thread, arg);
@@ -257,15 +286,18 @@ int compress_directory(char *directory_name) {
 	//}
 
 	// Wait for all threads to complete
+	pthread_mutex_lock(&completed_mutex);
 	while(completed_threads < nfiles){
 		//busy wait
-		usleep(1000);
+		pthread_cond_wait(&completed_cond, &completed_mutex);
 	}
+	pthread_mutex_unlock(&completed_mutex);
 
 	thread_pool_destroy(pool);
 	free(pool);
-
 	pthread_mutex_destroy(&completed_mutex);
+	pthread_cond_destroy(&completed_cond);
+
 	// Write all results to output file in lexicographical order
 	int total_in = 0, total_out = 0;
 	FILE *f_out = fopen("text.tzip", "w");

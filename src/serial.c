@@ -1,6 +1,7 @@
 // group 
-// Peyton Huffman, Tiago Silvestre
+// Peyton Huffman, Tiago Silvestre, Julia Jankoswsky
 // A multi-threaded implemetation of the compression tool using pthreads library
+// improving runtime by over 5x by creating a thread pool that is constantly working and adding new threads
 #include <dirent.h> 
 #include <stdio.h> 
 #include <assert.h>
